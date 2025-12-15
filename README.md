@@ -1,8 +1,8 @@
-# eslint-plugin-baseline
+# @nytodev/eslint-plugin-baseline
 
 A PHPStan-like baseline for ESLint. Ignore existing errors and only report new ones.
 
-[![npm version](https://badge.fury.io/js/eslint-plugin-baseline.svg)](https://www.npmjs.com/package/eslint-plugin-baseline)
+[![npm version](https://badge.fury.io/js/@nytodev%2Feslint-plugin-baseline.svg)](https://www.npmjs.com/package/@nytodev/eslint-plugin-baseline)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Why?
@@ -18,7 +18,7 @@ This is the same approach used by [PHPStan](https://phpstan.org/user-guide/basel
 ## Installation
 
 ```bash
-npm install --save-dev eslint-plugin-baseline
+npm install --save-dev @nytodev/eslint-plugin-baseline
 ```
 
 ## Quick Start
@@ -129,7 +129,7 @@ You can also use the plugin directly in your ESLint configuration:
 ### Flat config (eslint.config.js)
 
 ```javascript
-import baseline from 'eslint-plugin-baseline';
+import baseline from '@nytodev/eslint-plugin-baseline';
 
 export default [
   {
@@ -144,8 +144,8 @@ export default [
 
 ```javascript
 module.exports = {
-  plugins: ['baseline'],
-  processor: 'baseline/baseline',
+  plugins: ['@nytodev/baseline'],
+  processor: '@nytodev/baseline/baseline',
 };
 ```
 
@@ -221,7 +221,7 @@ lint:
 For programmatic usage:
 
 ```javascript
-const { Baseline, Reporter, createFormatter } = require('eslint-plugin-baseline');
+const { Baseline, Reporter, createFormatter } = require('@nytodev/eslint-plugin-baseline');
 
 // Create baseline instance
 const baseline = new Baseline({

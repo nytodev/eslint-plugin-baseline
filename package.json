@@ -1,5 +1,5 @@
 {
-  "name": "eslint-plugin-baseline",
+  "name": "@nytodev/eslint-plugin-baseline",
   "version": "1.0.0",
   "description": "ESLint baseline plugin - Ignore existing errors and only report new ones (PHPStan-like)",
   "main": "src/index.js",
