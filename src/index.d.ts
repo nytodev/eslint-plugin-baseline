@@ -33,6 +33,30 @@ export interface BaselineStats {
     ruleStats: { [ruleId: string]: number };
 }
 
+export interface DetailedBaselineStats {
+    /** Total number of baselined errors */
+    totalErrors: number;
+    /** Number of files with baselined errors */
+    fileCount: number;
+    /** Number of unique rules */
+    ruleCount: number;
+    /** Sorted list of rules by error count */
+    ruleStats: Array<{ rule: string; count: number }>;
+    /** Sorted list of files by error count */
+    fileStats: Array<{ file: string; count: number; rules: { [ruleId: string]: number } }>;
+    /** Error count by severity */
+    severityStats: { error: number; warning: number };
+}
+
+export interface PruneResult {
+    /** Pruned baseline data */
+    data: BaselineData;
+    /** Number of entries removed */
+    removedCount: number;
+    /** Number of entries kept */
+    keptCount: number;
+}
+
 export interface UnmatchedEntry extends BaselineError {
     /** File path */
     file: string;
@@ -78,8 +102,30 @@ export declare class Baseline {
     /** Get statistics about the baseline */
     getStats(): BaselineStats;
 
+    /** Get detailed statistics about the baseline */
+    getDetailedStats(): DetailedBaselineStats;
+
     /** Get unmatched baseline entries (fixed errors) */
     getUnmatched(): UnmatchedEntry[];
+
+    /**
+     * Prune baseline - remove entries that no longer exist
+     * @param currentErrors - Current ESLint errors by file
+     */
+    prune(currentErrors: BaselineData): PruneResult;
+
+    /**
+     * Filter errors by specific rules
+     * @param errors - Errors by file
+     * @param rules - Rule IDs to include
+     */
+    filterByRules(errors: BaselineData, rules: string[]): BaselineData;
+
+    /** Check if baseline file exists */
+    exists(): boolean;
+
+    /** Delete baseline file(s) */
+    delete(): void;
 
     /** Reset baseline state */
     reset(): void;

@@ -30,6 +30,7 @@ function createFormatter(options = {}) {
         reportUnmatched = false,
         color = true,
         verbose = false,
+        errorsToBaseline = null, // Pre-filtered errors for --suppress-rule
     } = options;
 
     /**
@@ -54,7 +55,7 @@ function createFormatter(options = {}) {
         });
 
         if (update) {
-            return handleUpdateMode(results, baseline, reporter, cwd, allowEmpty);
+            return handleUpdateMode(results, baseline, reporter, cwd, allowEmpty, errorsToBaseline);
         }
 
         return handleCheckMode(results, baseline, reporter, cwd, reportUnmatched);
@@ -64,31 +65,38 @@ function createFormatter(options = {}) {
 /**
  * Handle update mode (generate baseline)
  */
-function handleUpdateMode(results, baseline, reporter, cwd, allowEmpty) {
-    const newBaseline = {};
+function handleUpdateMode(results, baseline, reporter, cwd, allowEmpty, errorsToBaseline = null) {
+    let newBaseline;
 
-    for (const result of results) {
-        if (result.messages.length === 0) {
-            continue;
-        }
+    // Use pre-filtered errors if provided (from --suppress-rule)
+    if (errorsToBaseline) {
+        newBaseline = errorsToBaseline;
+    } else {
+        newBaseline = {};
 
-        const relativePath = path.relative(cwd, result.filePath);
-
-        for (const msg of result.messages) {
-            if (!msg.ruleId) {
+        for (const result of results) {
+            if (result.messages.length === 0) {
                 continue;
             }
 
-            if (!newBaseline[relativePath]) {
-                newBaseline[relativePath] = [];
-            }
+            const relativePath = path.relative(cwd, result.filePath);
 
-            newBaseline[relativePath].push({
-                ruleId: msg.ruleId,
-                line: msg.line,
-                column: msg.column,
-                message: msg.message,
-            });
+            for (const msg of result.messages) {
+                if (!msg.ruleId) {
+                    continue;
+                }
+
+                if (!newBaseline[relativePath]) {
+                    newBaseline[relativePath] = [];
+                }
+
+                newBaseline[relativePath].push({
+                    ruleId: msg.ruleId,
+                    line: msg.line,
+                    column: msg.column,
+                    message: msg.message,
+                });
+            }
         }
     }
 

@@ -445,4 +445,188 @@ describe('Baseline Statistics', () => {
         // Cleanup
         fs.rmSync(tmpDir, { recursive: true });
     });
+
+    test('should calculate detailed statistics', () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eslint-baseline-'));
+        const baseline = new Baseline({
+            cwd: tmpDir,
+            baselineFile: '.eslintbaseline.json',
+        });
+
+        const data = {
+            'src/file1.ts': [
+                { ruleId: 'no-unused-vars', line: 10, column: 5, message: 'Error 1' },
+                { ruleId: 'no-console', line: 30, column: 1, message: 'Error 2' },
+            ],
+            'src/file2.ts': [
+                { ruleId: 'no-console', line: 5, column: 1, message: 'Error 3' },
+            ],
+        };
+
+        baseline.save(data, { allowEmpty: true });
+        baseline.reset();
+        baseline.load();
+
+        const stats = baseline.getDetailedStats();
+
+        assert.strictEqual(stats.totalErrors, 3);
+        assert.strictEqual(stats.fileCount, 2);
+        assert.strictEqual(stats.ruleCount, 2);
+        assert.ok(Array.isArray(stats.ruleStats));
+        assert.ok(Array.isArray(stats.fileStats));
+
+        // Cleanup
+        fs.rmSync(tmpDir, { recursive: true });
+    });
+});
+
+describe('Baseline Prune', () => {
+    test('should prune fixed errors', () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eslint-baseline-'));
+        const baseline = new Baseline({
+            cwd: tmpDir,
+            baselineFile: '.eslintbaseline.json',
+        });
+
+        // Original baseline with 3 errors
+        const originalData = {
+            'src/file.ts': [
+                { ruleId: 'no-unused-vars', line: 10, column: 5, message: 'Error 1' },
+                { ruleId: 'no-console', line: 20, column: 1, message: 'Error 2' },
+                { ruleId: 'no-debugger', line: 30, column: 1, message: 'Error 3' },
+            ],
+        };
+
+        baseline.save(originalData, { allowEmpty: true });
+        baseline.reset();
+        baseline.load();
+
+        // Current errors (one fixed)
+        const currentErrors = {
+            'src/file.ts': [
+                { ruleId: 'no-unused-vars', line: 10, column: 5, message: 'Error 1' },
+                { ruleId: 'no-console', line: 20, column: 1, message: 'Error 2' },
+                // no-debugger was fixed
+            ],
+        };
+
+        const result = baseline.prune(currentErrors);
+
+        assert.strictEqual(result.removedCount, 1);
+        assert.strictEqual(result.keptCount, 2);
+        assert.strictEqual(result.data['src/file.ts'].length, 2);
+
+        // Cleanup
+        fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    test('should remove entire file when all errors fixed', () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eslint-baseline-'));
+        const baseline = new Baseline({
+            cwd: tmpDir,
+            baselineFile: '.eslintbaseline.json',
+        });
+
+        const originalData = {
+            'src/file1.ts': [
+                { ruleId: 'no-console', line: 10, column: 1, message: 'Error 1' },
+            ],
+            'src/file2.ts': [
+                { ruleId: 'no-console', line: 20, column: 1, message: 'Error 2' },
+            ],
+        };
+
+        baseline.save(originalData, { allowEmpty: true });
+        baseline.reset();
+        baseline.load();
+
+        // Only file2 has errors now
+        const currentErrors = {
+            'src/file2.ts': [
+                { ruleId: 'no-console', line: 20, column: 1, message: 'Error 2' },
+            ],
+        };
+
+        const result = baseline.prune(currentErrors);
+
+        assert.strictEqual(result.removedCount, 1);
+        assert.strictEqual(result.keptCount, 1);
+        assert.ok(!result.data['src/file1.ts']);
+        assert.ok(result.data['src/file2.ts']);
+
+        // Cleanup
+        fs.rmSync(tmpDir, { recursive: true });
+    });
+});
+
+describe('Baseline Filter by Rules', () => {
+    test('should filter errors by specific rules', () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eslint-baseline-'));
+        const baseline = new Baseline({
+            cwd: tmpDir,
+            baselineFile: '.eslintbaseline.json',
+        });
+
+        const errors = {
+            'src/file.ts': [
+                { ruleId: 'no-unused-vars', line: 10, message: 'Error 1' },
+                { ruleId: 'no-console', line: 20, message: 'Error 2' },
+                { ruleId: 'no-debugger', line: 30, message: 'Error 3' },
+            ],
+        };
+
+        const filtered = baseline.filterByRules(errors, ['no-console']);
+
+        assert.strictEqual(filtered['src/file.ts'].length, 1);
+        assert.strictEqual(filtered['src/file.ts'][0].ruleId, 'no-console');
+
+        // Cleanup
+        fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    test('should filter multiple rules', () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eslint-baseline-'));
+        const baseline = new Baseline({
+            cwd: tmpDir,
+            baselineFile: '.eslintbaseline.json',
+        });
+
+        const errors = {
+            'src/file.ts': [
+                { ruleId: 'no-unused-vars', line: 10, message: 'Error 1' },
+                { ruleId: 'no-console', line: 20, message: 'Error 2' },
+                { ruleId: 'no-debugger', line: 30, message: 'Error 3' },
+            ],
+        };
+
+        const filtered = baseline.filterByRules(errors, ['no-console', 'no-debugger']);
+
+        assert.strictEqual(filtered['src/file.ts'].length, 2);
+
+        // Cleanup
+        fs.rmSync(tmpDir, { recursive: true });
+    });
+});
+
+describe('Baseline Existence', () => {
+    test('should detect baseline existence', () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eslint-baseline-'));
+        const baseline = new Baseline({
+            cwd: tmpDir,
+            baselineFile: '.eslintbaseline.json',
+        });
+
+        assert.strictEqual(baseline.exists(), false);
+
+        baseline.save({ 'file.ts': [{ ruleId: 'test', line: 1, message: 'test' }] });
+
+        assert.strictEqual(baseline.exists(), true);
+
+        baseline.delete();
+
+        assert.strictEqual(baseline.exists(), false);
+
+        // Cleanup
+        fs.rmSync(tmpDir, { recursive: true });
+    });
 });

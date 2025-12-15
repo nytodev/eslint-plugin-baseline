@@ -426,6 +426,166 @@ class Baseline {
         this.index = null;
         this.loaded = false;
     }
+
+    /**
+     * Prune baseline - remove entries that no longer exist in current errors
+     * @param {Object} currentErrors - Current ESLint errors by file
+     * @returns {Object} Pruned baseline data and stats
+     */
+    prune(currentErrors) {
+        if (!this.loaded) {
+            this.load();
+        }
+
+        const pruned = {};
+        let removedCount = 0;
+        let keptCount = 0;
+
+        // Build index of current errors
+        const currentIndex = new Map();
+        for (const [file, errors] of Object.entries(currentErrors)) {
+            const hashes = new Set();
+            for (const error of errors) {
+                const hash = this._generateHash(error.ruleId, error.line, error.message);
+                hashes.add(hash);
+            }
+            currentIndex.set(file, hashes);
+        }
+
+        // Filter baseline to only keep errors that still exist
+        for (const [file, errors] of Object.entries(this.data)) {
+            const currentHashes = currentIndex.get(file);
+
+            if (!currentHashes) {
+                // File no longer has errors, remove all
+                removedCount += errors.length;
+                continue;
+            }
+
+            const keptErrors = [];
+            for (const error of errors) {
+                const hash = this._generateHash(error.ruleId, error.line, error.message);
+                if (currentHashes.has(hash)) {
+                    keptErrors.push(error);
+                    keptCount++;
+                } else {
+                    removedCount++;
+                }
+            }
+
+            if (keptErrors.length > 0) {
+                pruned[file] = keptErrors;
+            }
+        }
+
+        return {
+            data: pruned,
+            removedCount,
+            keptCount,
+        };
+    }
+
+    /**
+     * Filter errors by specific rules
+     * @param {Object} errors - Errors by file
+     * @param {string[]} rules - Rule IDs to include
+     * @returns {Object} Filtered errors
+     */
+    filterByRules(errors, rules) {
+        const ruleSet = new Set(rules);
+        const filtered = {};
+
+        for (const [file, fileErrors] of Object.entries(errors)) {
+            const matchingErrors = fileErrors.filter((e) => ruleSet.has(e.ruleId));
+            if (matchingErrors.length > 0) {
+                filtered[file] = matchingErrors;
+            }
+        }
+
+        return filtered;
+    }
+
+    /**
+     * Get detailed statistics about the baseline
+     * @returns {Object}
+     */
+    getDetailedStats() {
+        if (!this.loaded) {
+            this.load();
+        }
+
+        let totalErrors = 0;
+        const fileCount = Object.keys(this.data).length;
+        const ruleStats = {};
+        const fileStats = {};
+        const severityStats = { error: 0, warning: 0 };
+
+        for (const [file, errors] of Object.entries(this.data)) {
+            fileStats[file] = {
+                count: errors.length,
+                rules: {},
+            };
+
+            for (const error of errors) {
+                totalErrors++;
+                ruleStats[error.ruleId] = (ruleStats[error.ruleId] || 0) + 1;
+                fileStats[file].rules[error.ruleId] = (fileStats[file].rules[error.ruleId] || 0) + 1;
+
+                if (error.severity === 1) {
+                    severityStats.warning++;
+                } else {
+                    severityStats.error++;
+                }
+            }
+        }
+
+        // Sort rules by count
+        const sortedRules = Object.entries(ruleStats)
+            .sort((a, b) => b[1] - a[1])
+            .map(([rule, count]) => ({ rule, count }));
+
+        // Sort files by error count
+        const sortedFiles = Object.entries(fileStats)
+            .sort((a, b) => b[1].count - a[1].count)
+            .map(([file, stats]) => ({ file, ...stats }));
+
+        return {
+            totalErrors,
+            fileCount,
+            ruleCount: Object.keys(ruleStats).length,
+            ruleStats: sortedRules,
+            fileStats: sortedFiles,
+            severityStats,
+        };
+    }
+
+    /**
+     * Check if baseline exists
+     * @returns {boolean}
+     */
+    exists() {
+        if (this.splitByRule) {
+            return fs.existsSync(this.getSplitBaselineDir());
+        }
+        return fs.existsSync(this.getBaselinePath());
+    }
+
+    /**
+     * Delete baseline file(s)
+     */
+    delete() {
+        if (this.splitByRule) {
+            const dir = this.getSplitBaselineDir();
+            if (fs.existsSync(dir)) {
+                fs.rmSync(dir, { recursive: true });
+            }
+        } else {
+            const file = this.getBaselinePath();
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file);
+            }
+        }
+    }
 }
 
 module.exports = {

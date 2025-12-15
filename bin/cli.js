@@ -25,6 +25,10 @@ const args = process.argv.slice(2);
 
 const options = {
     update: false,
+    prune: false,
+    stats: false,
+    clean: false,
+    suppressRules: [],
     baselineFile: '.eslintbaseline.json',
     splitByRule: false,
     allowEmpty: false,
@@ -65,6 +69,23 @@ while (i < args.length) {
         case '--report-unmatched':
         case '-r':
             options.reportUnmatched = true;
+            break;
+
+        case '--prune':
+        case '-p':
+            options.prune = true;
+            break;
+
+        case '--stats':
+            options.stats = true;
+            break;
+
+        case '--clean':
+            options.clean = true;
+            break;
+
+        case '--suppress-rule':
+            options.suppressRules.push(args[++i]);
             break;
 
         case '--verbose':
@@ -113,21 +134,28 @@ Usage:
   npx eslint-baseline [options] [files...]
 
 Options:
-  -u, --update           Generate or update the baseline file
-  -b, --baseline-file    Baseline file path (default: .eslintbaseline.json)
-  -s, --split-by-rule    Split baseline into multiple files by rule
-  --allow-empty          Allow generating an empty baseline
-  -r, --report-unmatched Report baseline entries that no longer match
-  -v, --verbose          Verbose output
-  --no-color             Disable colored output
-  -h, --help             Show this help message
-  --version              Show version
-  --                     Pass remaining arguments to ESLint
+  -u, --update             Generate or update the baseline file
+  -p, --prune              Remove fixed errors from baseline
+  --stats                  Show detailed baseline statistics
+  --clean                  Delete the baseline file
+  --suppress-rule <rule>   Only baseline specific rule (can be repeated)
+  -b, --baseline-file      Baseline file path (default: .eslintbaseline.json)
+  -s, --split-by-rule      Split baseline into multiple files by rule
+  --allow-empty            Allow generating an empty baseline
+  -r, --report-unmatched   Report baseline entries that no longer match
+  -v, --verbose            Verbose output
+  --no-color               Disable colored output
+  -h, --help               Show this help message
+  --version                Show version
+  --                       Pass remaining arguments to ESLint
 
 Examples:
   npx eslint-baseline                          # Lint with baseline
   npx eslint-baseline --update                 # Generate baseline
   npx eslint-baseline --update src/            # Generate for src/ only
+  npx eslint-baseline --prune                  # Remove fixed errors
+  npx eslint-baseline --stats                  # Show statistics
+  npx eslint-baseline --suppress-rule no-console --update
   npx eslint-baseline --split-by-rule          # Use split baseline
   npx eslint-baseline -- --fix                 # Pass --fix to ESLint
 
@@ -144,9 +172,51 @@ if (options.version) {
     process.exit(0);
 }
 
+// Color helpers
+const c = {
+    reset: options.color ? '\x1b[0m' : '',
+    bold: options.color ? '\x1b[1m' : '',
+    dim: options.color ? '\x1b[2m' : '',
+    red: options.color ? '\x1b[31m' : '',
+    green: options.color ? '\x1b[32m' : '',
+    yellow: options.color ? '\x1b[33m' : '',
+    cyan: options.color ? '\x1b[36m' : '',
+    magenta: options.color ? '\x1b[35m' : '',
+};
+
 // Run ESLint and process results
 async function run() {
     const cwd = process.cwd();
+
+    const baseline = new Baseline({
+        cwd,
+        baselineFile: options.baselineFile,
+        splitByRule: options.splitByRule,
+    });
+
+    // Handle --clean
+    if (options.clean) {
+        if (baseline.exists()) {
+            baseline.delete();
+            console.log(`${c.green}Baseline deleted.${c.reset}`);
+        } else {
+            console.log(`${c.yellow}No baseline file found.${c.reset}`);
+        }
+        process.exit(0);
+    }
+
+    // Handle --stats (without running ESLint)
+    if (options.stats && !options.update && !options.prune) {
+        if (!baseline.exists()) {
+            console.log(`${c.yellow}No baseline file found. Run with --update to create one.${c.reset}`);
+            process.exit(1);
+        }
+
+        baseline.load();
+        const stats = baseline.getDetailedStats();
+        printStats(stats);
+        process.exit(0);
+    }
 
     // Determine files to lint
     const files = options.files.length > 0 ? options.files : ['.'];
@@ -181,6 +251,77 @@ async function run() {
         process.exit(eslintResult.exitCode || 1);
     }
 
+    // Convert results to error map
+    const currentErrors = {};
+    for (const result of results) {
+        if (result.messages.length === 0) continue;
+        const relativePath = path.relative(cwd, result.filePath);
+        currentErrors[relativePath] = result.messages
+            .filter((m) => m.ruleId)
+            .map((m) => ({
+                ruleId: m.ruleId,
+                line: m.line,
+                column: m.column,
+                message: m.message,
+                severity: m.severity,
+            }));
+    }
+
+    // Handle --prune
+    if (options.prune) {
+        if (!baseline.exists()) {
+            console.log(`${c.yellow}No baseline file found. Nothing to prune.${c.reset}`);
+            process.exit(0);
+        }
+
+        baseline.load();
+        const pruneResult = baseline.prune(currentErrors);
+
+        if (pruneResult.removedCount === 0) {
+            console.log(`${c.green}Baseline is already up to date. No entries to prune.${c.reset}`);
+        } else {
+            baseline.save(pruneResult.data, { allowEmpty: true });
+            console.log(`${c.green}${c.bold}Baseline pruned!${c.reset}`);
+            console.log(`  ${c.red}${pruneResult.removedCount}${c.reset} entries removed (fixed errors)`);
+            console.log(`  ${c.cyan}${pruneResult.keptCount}${c.reset} entries kept`);
+        }
+
+        if (options.stats) {
+            baseline.reset();
+            baseline.load();
+            const stats = baseline.getDetailedStats();
+            console.log('');
+            printStats(stats);
+        }
+
+        process.exit(0);
+    }
+
+    // Handle --suppress-rule (filter to specific rules)
+    let errorsToBaseline = currentErrors;
+    if (options.suppressRules.length > 0 && options.update) {
+        errorsToBaseline = baseline.filterByRules(currentErrors, options.suppressRules);
+
+        // If updating with specific rules, merge with existing baseline
+        if (baseline.exists()) {
+            baseline.load();
+            for (const [file, errors] of Object.entries(baseline.data)) {
+                // Keep existing errors that are NOT in the suppress-rule list
+                const existingOtherRules = errors.filter(
+                    (e) => !options.suppressRules.includes(e.ruleId)
+                );
+                if (existingOtherRules.length > 0) {
+                    if (!errorsToBaseline[file]) {
+                        errorsToBaseline[file] = [];
+                    }
+                    errorsToBaseline[file].push(...existingOtherRules);
+                }
+            }
+        }
+
+        console.log(`${c.dim}Suppressing rules: ${options.suppressRules.join(', ')}${c.reset}\n`);
+    }
+
     // Create formatter with options
     const formatter = createFormatter({
         update: options.update,
@@ -190,13 +331,60 @@ async function run() {
         reportUnmatched: options.reportUnmatched,
         color: options.color,
         verbose: options.verbose,
+        errorsToBaseline: options.suppressRules.length > 0 ? errorsToBaseline : null,
     });
 
     // Format results
     const { output, exitCode } = formatter(results, { cwd });
 
     console.log(output);
+
+    // Show stats after update if requested
+    if (options.stats && options.update) {
+        baseline.reset();
+        baseline.load();
+        const stats = baseline.getDetailedStats();
+        console.log('');
+        printStats(stats);
+    }
+
     process.exit(exitCode);
+}
+
+/**
+ * Print detailed statistics
+ * @param {Object} stats
+ */
+function printStats(stats) {
+    console.log(`${c.bold}Baseline Statistics${c.reset}`);
+    console.log(`${'─'.repeat(50)}`);
+    console.log(`  Total errors:  ${c.cyan}${stats.totalErrors}${c.reset}`);
+    console.log(`  Files:         ${c.cyan}${stats.fileCount}${c.reset}`);
+    console.log(`  Rules:         ${c.cyan}${stats.ruleCount}${c.reset}`);
+    console.log('');
+
+    if (stats.ruleStats.length > 0) {
+        console.log(`${c.bold}Errors by rule:${c.reset}`);
+        const maxRuleLen = Math.max(...stats.ruleStats.map((r) => r.rule.length));
+        for (const { rule, count } of stats.ruleStats.slice(0, 15)) {
+            const bar = '█'.repeat(Math.min(Math.ceil(count / stats.totalErrors * 30), 30));
+            console.log(`  ${c.dim}${rule.padEnd(maxRuleLen)}${c.reset}  ${c.yellow}${bar}${c.reset} ${count}`);
+        }
+        if (stats.ruleStats.length > 15) {
+            console.log(`  ${c.dim}... and ${stats.ruleStats.length - 15} more rules${c.reset}`);
+        }
+        console.log('');
+    }
+
+    if (stats.fileStats.length > 0 && options.verbose) {
+        console.log(`${c.bold}Top files by error count:${c.reset}`);
+        for (const { file, count } of stats.fileStats.slice(0, 10)) {
+            console.log(`  ${c.cyan}${file}${c.reset}: ${count}`);
+        }
+        if (stats.fileStats.length > 10) {
+            console.log(`  ${c.dim}... and ${stats.fileStats.length - 10} more files${c.reset}`);
+        }
+    }
 }
 
 /**
