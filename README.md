@@ -58,11 +58,23 @@ npx eslint-baseline
 # Lint specific files/directories
 npx eslint-baseline src/
 
+# Remove fixed errors from baseline
+npx eslint-baseline --prune
+
+# Show baseline statistics
+npx eslint-baseline --stats
+
+# Baseline only specific rules
+npx eslint-baseline --suppress-rule no-console --suppress-rule no-debugger --update
+
 # Split baseline by rule (like PHPStan baseline-per-identifier)
 npx eslint-baseline --update --split-by-rule
 
 # Report unmatched baseline entries (errors that no longer exist)
 npx eslint-baseline --report-unmatched
+
+# Delete baseline
+npx eslint-baseline --clean
 
 # Allow empty baseline
 npx eslint-baseline --update --allow-empty
@@ -79,6 +91,10 @@ npx eslint-baseline --verbose
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--update` | `-u` | Generate or update the baseline file |
+| `--prune` | `-p` | Remove fixed errors from baseline |
+| `--stats` | | Show detailed baseline statistics |
+| `--clean` | | Delete the baseline file |
+| `--suppress-rule <rule>` | | Only baseline specific rule (can be repeated) |
 | `--baseline-file <path>` | `-b` | Baseline file path (default: `.eslintbaseline.json`) |
 | `--split-by-rule` | `-s` | Split baseline into multiple files by rule |
 | `--allow-empty` | | Allow generating an empty baseline |
