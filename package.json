@@ -42,10 +42,10 @@
   },
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/nytodev/eslint-plugin-baseline"
   },
   "bugs": {
-    "url": ""
+    "url": "https://github.com/nytodev/eslint-plugin-baseline/issues"
   },
-  "homepage": ""
+  "homepage": "https://github.com/nytodev/eslint-plugin-baseline#readme"
 }
