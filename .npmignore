@@ -1,0 +1,8 @@
+test/
+coverage/
+.nyc_output/
+*.log
+.gitignore
+.eslintrc*
+eslint.config.js
+.prettierrc*
